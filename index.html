@@ -1,0 +1,170 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heart Strings: Dating Simulator</title>
+    <link rel="stylesheet" href="styles.css">
+    <script type="importmap">
+    {
+        "imports": {
+            "vue": "https://unpkg.com/vue@3/dist/vue.esm-browser.js"
+        }
+    }
+    </script>
+</head>
+<body>
+    <div id="app">
+        <div class="loading-screen" v-if="loading">
+            <div class="loading-spinner"></div>
+            <p>{{ loadingMessage }}</p>
+        </div>
+
+        <header>
+            <h1>Heart Strings</h1>
+            <div class="settings-icon" @click="toggleSettings">⚙️</div>
+        </header>
+
+        <div class="main-container">
+            <!-- Character Selection Screen -->
+            <div class="screen character-selection" v-if="currentScreen === 'character'">
+                <h2>Choose who to date</h2>
+                <div class="character-grid">
+                    <div v-for="char in characters" :key="char.id" class="character-card" @click="selectCharacter(char)">
+                        <div class="character-image-container">
+                            <img v-if="char.imageUrl" :src="char.imageUrl" :alt="char.name" class="character-image">
+                            <div v-else class="character-image-placeholder">Loading...</div>
+                        </div>
+                        <div class="character-info">
+                            <h3>{{ char.name }}</h3>
+                            <div class="relationship-status">{{ getRelationshipStage(char.id) }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Location Selection Screen -->
+            <div class="screen location-selection" v-if="currentScreen === 'location'">
+                <h2>Where would you like to take {{ selectedCharacter.name }}?</h2>
+                <div class="location-grid">
+                    <div v-for="loc in locations" :key="loc.id" class="location-card" @click="selectLocation(loc)">
+                        <div class="location-image-container">
+                            <img v-if="loc.imageUrl" :src="loc.imageUrl" :alt="loc.name" class="location-image">
+                            <div v-else class="location-image-placeholder">Loading...</div>
+                        </div>
+                        <div class="location-info">
+                            <h3>{{ loc.name }}</h3>
+                            <p>{{ loc.description }}</p>
+                        </div>
+                    </div>
+                </div>
+                <button class="back-button" @click="goBack">Back</button>
+            </div>
+
+            <!-- Date Screen -->
+            <div class="screen date-screen" v-if="currentScreen === 'date'">
+                <div class="date-header">
+                    <h2>{{ selectedLocation.name }} with {{ selectedCharacter.name }}</h2>
+                    <div class="relationship-status">{{ getRelationshipStage(selectedCharacter.id) }}</div>
+                </div>
+                <div class="date-content">
+                    <div class="date-visuals">
+                        <div class="location-background">
+                            <img v-if="selectedLocation.imageUrl" :src="selectedLocation.imageUrl" :alt="selectedLocation.name">
+                        </div>
+                        <div class="character-portrait">
+                            <img v-if="selectedCharacter.imageUrl" :src="selectedCharacter.imageUrl" :alt="selectedCharacter.name">
+                        </div>
+                    </div>
+                    <div class="dialogue-container">
+                        <div class="dialogue-box">
+                            <div class="character-name">{{ selectedCharacter.name }}</div>
+                            <div class="dialogue-text" v-html="currentDialogue"></div>
+                        </div>
+                        <div class="response-options" v-if="!waitingForFreeResponse && responseOptions.length > 0">
+                            <button 
+                                v-for="(option, index) in responseOptions" 
+                                :key="index" 
+                                class="response-button"
+                                @click="selectResponse(option, index)">
+                                {{ option.text }}
+                            </button>
+                            <button v-if="showOpenResponse" class="response-button open-response" @click="enableFreeResponse">
+                                ✏️ Say something else...
+                            </button>
+                        </div>
+                        <div class="free-response-container" v-if="waitingForFreeResponse">
+                            <textarea 
+                                v-model="freeResponseText" 
+                                class="free-response-input"
+                                placeholder="Type your response..."
+                                @keydown.enter.prevent="submitFreeResponse"></textarea>
+                            <div class="free-response-buttons">
+                                <button @click="cancelFreeResponse" class="cancel-button">Cancel</button>
+                                <button @click="submitFreeResponse" class="submit-button" :disabled="!freeResponseText.trim()">Send</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <button class="back-button" @click="goBack">End Date</button>
+            </div>
+        </div>
+
+        <!-- Settings Modal -->
+        <div class="modal settings-modal" v-if="showSettings">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Settings</h2>
+                    <span class="close-button" @click="toggleSettings">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <div class="setting-item">
+                        <label>Text-to-Speech</label>
+                        <div class="toggle-switch">
+                            <input type="checkbox" v-model="settings.ttsEnabled" id="tts-toggle">
+                            <label for="tts-toggle"></label>
+                        </div>
+                    </div>
+                    <div class="setting-item" v-if="settings.ttsEnabled">
+                        <label>Speech Volume</label>
+                        <input type="range" v-model="settings.volume" min="0" max="1" step="0.1">
+                    </div>
+                    <div class="setting-item" v-if="settings.ttsEnabled">
+                        <label>Speech Rate</label>
+                        <input type="range" v-model="settings.rate" min="0.5" max="2" step="0.1">
+                    </div>
+                    <div class="setting-item">
+                        <label>Show open-ended response option</label>
+                        <div class="toggle-switch">
+                            <input type="checkbox" v-model="settings.showOpenResponse" id="open-response-toggle">
+                            <label for="open-response-toggle"></label>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <button class="danger-button" @click="confirmReset">Reset All Progress</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Confirmation Modal -->
+        <div class="modal confirmation-modal" v-if="showConfirmation">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Confirm Reset</h2>
+                    <span class="close-button" @click="showConfirmation = false">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to reset all progress? This will delete all relationship data and memories.</p>
+                    <div class="modal-buttons">
+                        <button @click="showConfirmation = false">Cancel</button>
+                        <button class="danger-button" @click="resetAllProgress">Reset</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="app.js"></script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>
